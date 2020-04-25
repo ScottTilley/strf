@@ -10,7 +10,7 @@ Instructions:
 
 - The 'w' and 'W' keys are all you need to control all of the functionality. 'w' selects a point and 'W' resets only the screen size so you can zoom into the data to see individual bins and reset as needed to relocate as you reduce the trace. The two keys like this make for fast work flow... More on that below.
 
-- First select with 'w' one point immediately above OR below the wideband data you would like to reduce a point from, a '+' will appear at that location on the screen.  This selection will anchor the time so it is the one you need to be accurately aligned with over or under the data.  Next, go to the other end of the swath of data and hit 'w' again, another '+' will appear.  The alg will run and place a 'o' where it figures the centre of the curve is and save the point.Â  Now you are ready to repeat on a new wideband swath.
+- First select with 'w' one point immediately above OR below the wideband data you would like to reduce a point from, a '+' will appear at that location on the screen.  This selection will anchor the time so it is the one you need to be accurately aligned with over or under the data.  Next, go to the other end of the swath of data and hit 'w' again, another '+' will appear.  The alg will run and place a 'o' where it figures the centre of the curve is and save the point.  Now you are ready to repeat on a new wideband swath.
 
 ![PLOT1](https://github.com/ScottTilley/strf/blob/master/plot1.png)
 
