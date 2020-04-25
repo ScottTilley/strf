@@ -1,3 +1,11 @@
+Purpose:
+
+This version of rplot.c is meant to replace the existing version of rfplot.c in Cees Bassa's STRF, https://github.com/cbassa/strf
+
+rfplot.c was modified to include the ability to mark wideband signal Doppler points in a more 'scientific' and 'consistent' manner than guessing.  This is particularly important for the analysis of wideband data signals that have no carrier component.
+
+This is not an offical or supported version.  It is offered entirely at your own risk and may not work with current versions of STRF.
+
 Instructions:
 
 - The 'w' and 'W' keys are all you need to control all of the functionality.Â  'w' selects a point and 'W' resets only the screen size so you can zoom into the data to see individual bins and reset as needed to relocate as you reduce the trace.Â  The two keys like this make for fast work flow...Â  More on that below.
@@ -31,6 +39,10 @@ A few notes on how the alg works:
    There is a certain amount of filtering in the alg. to prevent invalid entry of x,y mouse coordinates to prevent program crashes.Â  Otherwise the code seems robust.
    
    One area of improvement could be to implement a Weighted Gaussian solver as they are more immune to noise and could improve the reduction of data overall particularly with noisy data.
+   
+   After writing this I discovered that there was an internal function for the curve fitting already in rfplot.c so my added external routine could be removed.
+   
+   Some error handling should be added to prevent zero's from getting 'logged' etc. 
 
 
 
