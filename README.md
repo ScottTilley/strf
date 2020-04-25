@@ -26,23 +26,23 @@ Here's the result of reducing an entire curve in the image below.
 
 - As you mark your points they are reduced to a file called wide.dat.
 
-A few notes on how the alg works:
+A few notes on how the alg works
 
-   The slice of the spectrum between the points selected is taken and the data has it's log taken.
+- The slice of the spectrum between the points selected is taken and the data has it's log taken.
    
-   The data is then fit to ax^2+bx+c to fit a parabola and the coefficients a,b and c are obtained.
+- The data is then fit to ax^2+bx+c to fit a parabola and the coefficients a,b and c are obtained.
    
-   From the coefficients obtained, the vertex of a parabola is solved using the equation vertex_x = -b/2a, thus in theory identifying the peak of the data blob.
+- From the coefficients obtained, the vertex of a parabola is solved using the equation vertex_x = -b/2a, thus in theory identifying the peak of the data blob.
+
+- The value is converted to MJD and Frequency and the point logged to wide.dat.
    
-   The value is converted to MJD and Frequency and the point logged to wide.dat.
+- There is a certain amount of filtering in the alg. to prevent invalid entry of x,y mouse coordinates to prevent program crashes.Â  Otherwise the code seems robust.
    
-   There is a certain amount of filtering in the alg. to prevent invalid entry of x,y mouse coordinates to prevent program crashes.Â  Otherwise the code seems robust.
+- One area of improvement could be to implement a Weighted Gaussian solver as they are more immune to noise and could improve the reduction of data overall particularly with noisy data.
    
-   One area of improvement could be to implement a Weighted Gaussian solver as they are more immune to noise and could improve the reduction of data overall particularly with noisy data.
+- After writing this I discovered that there was an internal function for the curve fitting already in rfplot.c so my added external routine could be removed.
    
-   After writing this I discovered that there was an internal function for the curve fitting already in rfplot.c so my added external routine could be removed.
-   
-   Some error handling should be added to prevent zero's from getting 'logged' etc. 
+- Some error handling should be added to prevent zero's from getting 'logged' etc. 
 
 
 
