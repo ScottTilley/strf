@@ -28,7 +28,7 @@ Here's the result of reducing an entire curve in the image below.
 
 A few notes on how the alg works
 
-- The slice of the spectrum between the points selected is taken and the data has it's log taken.
+- The slice of the spectrum between the points selected is taken and the data has its log taken.
    
 - The data is then fit to ax^2+bx+c to fit a parabola and the coefficients a,b and c are obtained.
    
