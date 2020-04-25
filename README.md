@@ -34,9 +34,11 @@ A few notes on how the alg works
    
 - From the coefficients obtained, the vertex of a parabola is solved using the equation vertex_x = -b/2a, thus in theory identifying the peak of the data blob.
 
+![Image description](https://github.com/ScottTilley/strf/blob/master/plot4.png)
+
 - The value is converted to MJD and Frequency and the point logged to wide.dat.
    
-- There is a certain amount of filtering in the alg. to prevent invalid entry of x,y mouse coordinates to prevent program crashes.Â  Otherwise the code seems robust.
+- There is a certain amount of filtering in the alg. to prevent invalid entry of x,y mouse coordinates to prevent program crashes.  Otherwise the code seems robust.
    
 - One area of improvement could be to implement a Weighted Gaussian solver as they are more immune to noise and could improve the reduction of data overall particularly with noisy data.
    
