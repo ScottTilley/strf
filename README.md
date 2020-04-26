@@ -1,6 +1,6 @@
 Purpose:
 
-This version of rfplot.c is meant to replace the existing version of rfplot.c in Cees Bassa's STRF, https://github.com/cbassa/strf
+This version of rfplot.c was meant to replace the existing version of rfplot.c in Cees Bassa's STRF, https://github.com/cbassa/strf.  I never got around to making some further changes and the present version of rfplot.c has evolved...  I may get back to making a few more changes and work with Cees Bassa to incorporate those changes in the offical version.  However, Cees is moving to porting much of this code to Python and the project is in limbo.
 
 rfplot.c was modified to include the ability to mark wideband signal Doppler points in a more 'scientific' and 'consistent' manner than guessing.  This is particularly important for the analysis of wideband data signals that have no carrier component.
 
