@@ -4,72 +4,118 @@
 #
 # Alpha-5 compatibility update
 # Modified by: Scott Tilley
-# Date: 2026-07-15
+# Date: 2026-07-16
 #
 # Changes made:
-#   - Reworked generation of desig.txt to read the catalog number and
-#     international designator from their fixed-width TLE line-1 fields.
-#   - Preserves Alpha-5 catalog identifiers exactly as written in a TLE
-#     (for example, A0000) instead of coercing them to numeric values.
-#   - Correctly handles analyst objects with a blank international-designator
-#     field and omits them from desig.txt rather than misreading the epoch.
+#   - Updated the Space-Track request to use the current GP API class.
+#   - URL-encoded the EPOCH greater-than operator in the Space-Track query.
+#   - Reworked desig.txt generation to read fixed-width TLE line-1 fields.
+#   - Preserves Alpha-5 catalog identifiers exactly as written in the TLE
+#     (for example, A0000) rather than coercing them to numeric values.
+#   - Correctly handles objects with a blank international-designator field.
 #   - Retains the historical exclusion of numeric analyst IDs 80000-99000.
 #
-# The catalog.tle and bulk.tle source TLEs are otherwise left unchanged.
+# The downloaded catalog.tle and generated bulk.tle remain in standard TLE/3LE
+# format. Only the generation of the auxiliary desig.txt index was changed for
+# Alpha-5 compatibility.
+echo "tleupdate - Alpha-5 compatibile"
 
-# Check if TLE directory exists
-if [ ! -d $ST_TLEDIR ]; then
-    mkdir -p $ST_TLEDIR
+# Check required environment variables
+if [ -z "${ST_TLEDIR:-}" ]; then
+    printf '%s\n' "ST_TLEDIR is not set." >&2
+    exit 1
 fi
 
-# Goto TLE dir
-cd $ST_TLEDIR
+if [ -z "${ST_DATADIR:-}" ]; then
+    printf '%s\n' "ST_DATADIR is not set." >&2
+    exit 1
+fi
+
+# Check if TLE directory exists
+if [ ! -d "$ST_TLEDIR" ]; then
+    mkdir -p "$ST_TLEDIR"
+fi
+
+# Go to TLE directory
+cd "$ST_TLEDIR" || exit 1
 
 # Get date
-DATE=`date +%Y%m%d_%H%M%S`
+DATE=$(date +%Y%m%d_%H%M%S)
 
-# Get space-track catalog
-if [[ ! -z "${ST_LOGIN}" ]]; then
-    # Get cookie
-    wget --post-data=$ST_LOGIN --cookies=on --keep-session-cookies --save-cookies=/tmp/cookies.txt 'https://www.space-track.org/ajaxauth/login' -o /tmp/stget.log
+# Get Space-Track catalog
+if [ -n "${ST_LOGIN:-}" ]; then
+    # Get authentication cookie
+    wget --post-data="$ST_LOGIN" \
+        --cookies=on \
+        --keep-session-cookies \
+        --save-cookies=/tmp/cookies.txt \
+        'https://www.space-track.org/ajaxauth/login' \
+        -O login \
+        -o /tmp/stget.log
 
-    # Get data
-    wget --keep-session-cookies --load-cookies=/tmp/cookies.txt 'https://www.space-track.org/basicspacedata/query/class/gp/EPOCH/>now-30/orderby/NORAD_CAT_ID,EPOCH/format/3le' -O catalog.tle
+    # Get GP data in 3LE format. %3E is the URL-encoded greater-than operator.
+    wget --keep-session-cookies \
+        --load-cookies=/tmp/cookies.txt \
+        'https://www.space-track.org/basicspacedata/query/class/gp/EPOCH/%3Enow-30/orderby/NORAD_CAT_ID,EPOCH/format/3le' \
+        -O catalog.tle
+
     dos2unix catalog.tle
 
-    # Fix missing leading zeros
-    sed -i -e "s/^1     /1 0000/g" -e "s/^2     /2 0000/g" -e "s/^1    /1 000/g" -e "s/^2    /2 000/g" -e "s/^1   /1 00/g" -e "s/^2   /2 00/g" -e "s/^1  /1 0/g" -e "s/^2  /2 0/g" catalog.tle
-    cp catalog.tle ${DATE}_catalog.txt
-    rm login /tmp/cookies.txt /tmp/stget.log
+    # Fix missing leading zeros in numeric catalog fields.
+    # Alpha-5 fields are already five characters wide and are unaffected.
+    sed -i \
+        -e 's/^1     /1 0000/g' \
+        -e 's/^2     /2 0000/g' \
+        -e 's/^1    /1 000/g' \
+        -e 's/^2    /2 000/g' \
+        -e 's/^1   /1 00/g' \
+        -e 's/^2   /2 00/g' \
+        -e 's/^1  /1 0/g' \
+        -e 's/^2  /2 0/g' \
+        catalog.tle
+
+    cp catalog.tle "${DATE}_catalog.txt"
+    rm -f login /tmp/cookies.txt /tmp/stget.log
+else
+    printf '%s\n' "ST_LOGIN is not set; retaining any existing catalog.tle." >&2
 fi
 
 # Get classfd
-wget https://mmccants.org/tles/classfd.zip -O classfd.zip
+wget 'https://mmccants.org/tles/classfd.zip' -O classfd.zip
 unzip -o classfd.zip
 dos2unix classfd.tle
-cp classfd.tle ${DATE}_classfd.txt
-rm classfd.zip
+cp classfd.tle "${DATE}_classfd.txt"
+rm -f classfd.zip
 
 # Get inttles
-wget https://mmccants.org/tles/inttles.zip -O inttles.zip
+wget 'https://mmccants.org/tles/inttles.zip' -O inttles.zip
 unzip -o inttles.zip
 dos2unix inttles.tle
-cp inttles.tle ${DATE}_inttles.txt
-rm inttles.zip
+cp inttles.tle "${DATE}_inttles.txt"
+rm -f inttles.zip
 
-# Get CALPOLY tles
-wget http://mstl.atl.calpoly.edu/~ops/keps/kepler.txt -O kepler.tle
+# Get CALPOLY TLEs
+wget 'http://mstl.atl.calpoly.edu/~ops/keps/kepler.txt' -O kepler.tle
 dos2unix kepler.tle
-sed -i -e "s/^1     /1 0000/g" -e "s/^2     /2 0000/g" -e "s/^1    /1 000/g" -e "s/^2    /2 000/g" -e "s/^1   /1 00/g" -e "s/^2   /2 00/g" -e "s/^1  /1 0/g" -e "s/^2  /2 0/g" kepler.tle
+sed -i \
+    -e 's/^1     /1 0000/g' \
+    -e 's/^2     /2 0000/g' \
+    -e 's/^1    /1 000/g' \
+    -e 's/^2    /2 000/g' \
+    -e 's/^1   /1 00/g' \
+    -e 's/^2   /2 00/g' \
+    -e 's/^1  /1 0/g' \
+    -e 's/^2  /2 0/g' \
+    kepler.tle
 
 # Create TLE bulk file
-cat classfd.tle kepler.tle catalog.tle >bulk.tle
-#cat classfd.tle catalog.tle >bulk.tle
+cat classfd.tle kepler.tle catalog.tle > bulk.tle
+# cat classfd.tle catalog.tle > bulk.tle
 
 # Build the catalog-number-to-international-designator index from the
 # fixed-width fields on TLE line 1. Do not parse these fields on whitespace:
-# Alpha-5 catalog numbers contain a letter, and analyst objects may have a
-# blank international designator.
+# Alpha-5 catalog numbers contain a letter, and some objects may have a blank
+# international-designator field.
 mkdir -p "$ST_DATADIR/data"
 awk '
 /^1 / {
@@ -90,9 +136,8 @@ awk '
     sub(/^[[:space:]]+/, "", desig)
     sub(/[[:space:]]+$/, "", desig)
 
-    # There is no designation mapping to write for analyst objects whose
-    # international-designator field is blank.
+    # There is no designation mapping to write when this field is blank.
     if (desig != "")
         print catid, desig
 }
-' bulk.tle | LC_ALL=C sort -u >"$ST_DATADIR/data/desig.txt"
+' bulk.tle | LC_ALL=C sort -u > "$ST_DATADIR/data/desig.txt"
