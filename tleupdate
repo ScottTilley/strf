@@ -1,5 +1,22 @@
 #!/bin/bash
 
+# STRF TLE catalog update utility
+#
+# Alpha-5 compatibility update
+# Modified by: Scott Tilley
+# Date: 2026-07-15
+#
+# Changes made:
+#   - Reworked generation of desig.txt to read the catalog number and
+#     international designator from their fixed-width TLE line-1 fields.
+#   - Preserves Alpha-5 catalog identifiers exactly as written in a TLE
+#     (for example, A0000) instead of coercing them to numeric values.
+#   - Correctly handles analyst objects with a blank international-designator
+#     field and omits them from desig.txt rather than misreading the epoch.
+#   - Retains the historical exclusion of numeric analyst IDs 80000-99000.
+#
+# The catalog.tle and bulk.tle source TLEs are otherwise left unchanged.
+
 # Check if TLE directory exists
 if [ ! -d $ST_TLEDIR ]; then
     mkdir -p $ST_TLEDIR
@@ -48,4 +65,34 @@ sed -i -e "s/^1     /1 0000/g" -e "s/^2     /2 0000/g" -e "s/^1    /1 000/g" -e 
 # Create TLE bulk file
 cat classfd.tle kepler.tle catalog.tle >bulk.tle
 #cat classfd.tle catalog.tle >bulk.tle
-cat bulk.tle | grep -e "^1 "  | awk '{if ($2<80000 || $2>99000) printf("%05d %s\n",$2,$3)}'  | sort | uniq >$ST_DATADIR/data/desig.txt
+
+# Build the catalog-number-to-international-designator index from the
+# fixed-width fields on TLE line 1. Do not parse these fields on whitespace:
+# Alpha-5 catalog numbers contain a letter, and analyst objects may have a
+# blank international designator.
+mkdir -p "$ST_DATADIR/data"
+awk '
+/^1 / {
+    catid = substr($0, 3, 5)
+    gsub(/[[:space:]]/, "", catid)
+
+    # Retain the historical exclusion of numeric analyst IDs 80000-99000.
+    if (catid ~ /^[0-9][0-9][0-9][0-9][0-9]$/) {
+        numeric_id = catid + 0
+        if (numeric_id >= 80000 && numeric_id <= 99000)
+            next
+        catid = sprintf("%05d", numeric_id)
+    } else if (catid !~ /^[A-HJ-NP-Z][0-9][0-9][0-9][0-9]$/) {
+        next
+    }
+
+    desig = substr($0, 10, 8)
+    sub(/^[[:space:]]+/, "", desig)
+    sub(/[[:space:]]+$/, "", desig)
+
+    # There is no designation mapping to write for analyst objects whose
+    # international-designator field is blank.
+    if (desig != "")
+        print catid, desig
+}
+' bulk.tle | LC_ALL=C sort -u >"$ST_DATADIR/data/desig.txt"
