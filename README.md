@@ -101,5 +101,5 @@ ALPHA-5
 
 rfplot.c, rffit.c, satutl.h, satutl.c and rftrace.c have been upgraded and tested for ALPHA-5 compatibily.
 
-strf now defaults to 'alpha-5' mode (i.e. A0000) and can be forced into decimal mode (i.e. 100000) by aurgument -N.
+strf now defaults to 'alpha-5' mode (i.e. A0000) and can be forced into decimal mode (i.e. 100000) by argument -N.
 
