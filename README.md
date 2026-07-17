@@ -95,3 +95,11 @@ It is also possible to read WAV files. This is compatible with any WAV file, 16 
 For WAV files exported from SatDump and SDR Console the `-P` options will automatically extract the correct parameters from the filename.
 
 The output spectrograms can be viewed and analysed using `rfplot`.
+
+ALPHA5
+------
+
+rfplot.c, rffit.c, satutl.h, satutl.c and rftrace.c have been upgraded and tested for ALPHA5 compatibily.
+
+strf now defaults to 'alpha5' mode A0000 and can be forces in decimal mode by aurgument -N.
+
