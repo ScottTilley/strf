@@ -54,6 +54,21 @@ int fgetline(FILE *file,char *s,int lim)
   return i;
 }
 
+// Parse a frequencies.txt entry containing either a numeric or Alpha-5 catalog ID.
+static int parse_frequency_line(const char *line,int *satno,double *freq0)
+{
+  char satid[6];
+  int status;
+
+  status=sscanf(line,"%5s %lf",satid,freq0);
+  if (status!=2)
+    return status;
+
+  *satno=alpha5_to_number(satid);
+
+  return 2;
+}
+
 // Greenwich Mean Sidereal Time
 double gmst(double mjd)
 {
@@ -477,31 +492,41 @@ void identify_trace(char *tlefile,struct trace t,int satno,char *freqlist)
 int is_classified(int satno)
 {
   int flag=0,no;
-  char *env,tlefile[128],line[LIM];
+  char *env,tlefile[128],line[LIM],satid[6];
   FILE *file;
 
   // Get classfd.tle path
   env=getenv("ST_TLEDIR");
   if(env==NULL||strlen(env)==0)
     env=".";
+
   sprintf(tlefile,"%s/classfd.tle",env);
 
   // Does it exist
   file=fopen(tlefile,"r");
+
   if (file==NULL) {
     printf("%s not found\n",tlefile);
-    flag=0;
-  } else {
-    // Loop over TLEs
-    while (fgetline(file,line,LIM)>0) {
-      // Use 1st TLE line
-      if (line[0]=='1') {
-	sscanf(line+2,"%d",&no);
-	if (no==satno) flag=1;
+    return 0;
+  }
+
+  // Loop over TLEs
+  while (fgetline(file,line,LIM)>0) {
+    // Use first TLE line
+    if (line[0]=='1' && line[1]==' ') {
+      strncpy(satid,line+2,5);
+      satid[5]='\0';
+
+      no=alpha5_to_number(satid);
+
+      if (no==satno) {
+        flag=1;
+        break;
       }
     }
-    fclose(file);
   }
+
+  fclose(file);
 
   return flag;
 }
@@ -548,7 +573,7 @@ struct trace *compute_trace(char *tlefile,double *mjd,int n,int site_id,float fr
       if ((line[0] == '\n') || (line[0] == '#'))
         continue;
 
-      status=sscanf(line,"%d %lf",&satno,&freq0);
+      status=parse_frequency_line(line,&satno,&freq0);
 
       if (status != 2) {
         printf("Frequency line not parsable, skipping:\n%s\n", line);
@@ -619,7 +644,7 @@ struct trace *compute_trace(char *tlefile,double *mjd,int n,int site_id,float fr
     if ((line[0] == '\n') || (line[0] == '#'))
       continue;
 
-    status=sscanf(line,"%d %lf",&satno,&freq0);
+    status=parse_frequency_line(line,&satno,&freq0);
 
     if (status != 2) {
       // Error about not being able to parse line already reported

@@ -7,6 +7,7 @@
 #include <getopt.h>
 
 #include "sgdp4h.h"
+#include "satutl.h"
 #include "rfsites.h"
 #include "rftles.h"
 
@@ -38,6 +39,11 @@ struct data {
   char *satname;
 } d;
 orbit_t orb;
+// User-facing catalog IDs default to Alpha-5.
+// The -N option selects decimal display.
+static int numeric_ids=0;
+
+
 int fgetline(FILE *file,char *s,int lim);
 struct data read_data(char *filename,int graves,float offset);
 double date2mjd(int year,int month,double day);
@@ -66,6 +72,72 @@ double fit_curve(orbit_t orb,int *ia);
 double mjd2doy(double mjd,int *yr);
 double doy2mjd(int year,double doy);
 int identify_satellite_from_visibility(tle_array_t *tle_array, double altmin);
+static int parse_catalog_id(const char *text,int *satno);
+static void format_catalog_id(int satno,char *out,size_t out_size);
+
+// Parse either a conventional decimal catalog ID or an Alpha-5 TLE ID.
+// Examples accepted: 25544, 100000 and A0000.
+static int parse_catalog_id(const char *text,int *satno)
+{
+  char alpha5[6];
+  char *end;
+  long value;
+  size_t len;
+  int i;
+
+  if (text==NULL || satno==NULL)
+    return 0;
+
+  len=strlen(text);
+
+  if (len==0)
+    return 0;
+
+  // Alpha-5 form: one valid letter followed by four digits.
+  if (len==5 && isalpha((unsigned char) text[0])) {
+    alpha5[0]=toupper((unsigned char) text[0]);
+
+    // Alpha-5 omits I and O.
+    if (strchr("ABCDEFGHJKLMNPQRSTUVWXYZ",alpha5[0])==NULL)
+      return 0;
+
+    for (i=1;i<5;i++) {
+      if (!isdigit((unsigned char) text[i]))
+        return 0;
+
+      alpha5[i]=text[i];
+    }
+
+    alpha5[5]='\0';
+    *satno=alpha5_to_number(alpha5);
+
+    return 1;
+  }
+
+  // Conventional decimal form, including internal values above 99999.
+  value=strtol(text,&end,10);
+
+  if (*end!='\0' || value<0 || value>339999)
+    return 0;
+
+  *satno=(int) value;
+
+  return 1;
+}
+
+// Format a catalog ID for user-facing output.
+// Alpha-5 is the default; -N selects decimal display.
+static void format_catalog_id(int satno,char *out,size_t out_size)
+{
+  char alpha5[6];
+
+  if (numeric_ids) {
+    snprintf(out,out_size,"%05d",satno);
+  } else {
+    number_to_alpha5(satno,alpha5);
+    snprintf(out,out_size,"%s",alpha5);
+  }
+}
 
 double compute_mean_mjd(void)
 {
@@ -149,63 +221,75 @@ void format_tle(orbit_t orb,char *line1,char *line2)
 }
 
 
-int identify_satellite_from_doppler(tle_array_t *tle_array, double rmsmax)
+int identify_satellite_from_doppler(tle_array_t *tle_array,double rmsmax)
 {
   int i=0,flag=0;
   double rms,rmsmin;
   int ia[]={0,0,0,0,0,0};
   int satno=0,imode;
   double v,alt,azi,mjdmid;
-  char * satname = NULL;
+  char *satname=NULL;
+  char satstr[16];
 
   // Loop over TLEs
-  for (long elem = 0; elem < tle_array->number_of_elements; elem++) {
+  for (long elem=0;elem<tle_array->number_of_elements;elem++) {
     // Get TLE
-    tle_t *tle = get_tle_by_index(tle_array, elem);
+    tle_t *tle=get_tle_by_index(tle_array,elem);
 
     // Directly assign to global orb variable as even if the fit_curve below gets
     // the orbit as parameter, fit_curve will call compute_rms without giving
     // an orbit and the latter will use the global orb variable.
-    orb = tle->orbit;
-    d.satname = tle->name;
+    orb=tle->orbit;
+    d.satname=tle->name;
 
     // Initialize
     imode=init_sgdp4(&orb);
+
     if (imode==SGDP4_ERROR) {
-      printf("Error with %d, skipping\n",orb.satno);
+      format_catalog_id(orb.satno,satstr,sizeof(satstr));
+      printf("Error with %s, skipping\n",satstr);
       continue;
-    } 
-    //    velocity(orb,d.p[d.n/2].mjd,d.p[d.n/2].s,&v,&azi,&alt);
-    //    if (alt<0.0)
-    //      printf("Continue?\n");
-    //      continue;
+    }
+
     rms=fit_curve(orb,ia);
+
     if (flag==0 || rms<rmsmin) {
       rmsmin=rms;
       satno=orb.satno;
-      satname = tle->name;
+      satname=tle->name;
       flag=1;
     }
+
     if (rms<rmsmax) {
+      format_catalog_id(orb.satno,satstr,sizeof(satstr));
+
       if (tle->name) {
-        printf("%05d: %.3f kHz %.6f MHz | %s\n", orb.satno, rms, d.ffit/1000.0, tle->name);
+        printf("%s: %.6f kHz %.6f MHz | %s\n",
+               satstr,rms,d.ffit/1000.0,tle->name);
       } else {
-        printf("%05d: %.3f kHz %.6f MHz\n", orb.satno, rms, d.ffit/1000.0);
+        printf("%s: %.6f kHz %.6f MHz\n",
+               satstr,rms,d.ffit/1000.0);
       }
+
       i++;
     }
   }
 
   // Plot results
   if (i>0) {
+    format_catalog_id(satno,satstr,sizeof(satstr));
+
     if (satname) {
-      printf("Identified %d candidate(s), best fitting satellite is %05d - %s.\n", i, satno, satname);
+      printf("Identified %d candidate(s), best fitting satellite is %s - %s.\n",
+             i,satstr,satname);
     } else {
-      printf("Identified %d candidate(s), best fitting satellite is %05d.\n", i, satno);
+      printf("Identified %d candidate(s), best fitting satellite is %s.\n",
+             i,satstr);
     }
-    tle_t * tle = get_tle_by_catalog_id(tle_array, satno);
-    orb = tle->orbit;
-    d.satname = tle->name;
+
+    tle_t *tle=get_tle_by_catalog_id(tle_array,satno);
+    orb=tle->orbit;
+    d.satname=tle->name;
     rms=fit_curve(orb,ia);
   } else {
     printf("No candidates found.\n");
@@ -215,69 +299,84 @@ int identify_satellite_from_doppler(tle_array_t *tle_array, double rmsmax)
   return satno;
 }
 
-int identify_satellite_from_visibility(tle_array_t *tle_array, double altmin)
+int identify_satellite_from_visibility(tle_array_t *tle_array,double altmin)
 {
   int i=0,flag=0,nalt,nsel;
   int satno=0,imode;
   double alt,frac;
+  char satstr[16];
 
   // Loop over TLEs
-  for (long elem = 0; elem < tle_array->number_of_elements; elem++) {
+  for (long elem=0;elem<tle_array->number_of_elements;elem++) {
     // Get TLE
-    tle_t * tle = get_tle_by_index(tle_array, elem);
+    tle_t *tle=get_tle_by_index(tle_array,elem);
 
     // Directly assign to global orb variable as even if the fit_curve below gets
     // the orbit as parameter, fit_curve will call compute_rms without giving
     // an orbit and the latter will use the global orb variable.
-    orb = tle->orbit;
-    d.satname = tle->name;
+    orb=tle->orbit;
+    d.satname=tle->name;
 
     // Initialize
     imode=init_sgdp4(&orb);
+
     if (imode==SGDP4_ERROR) {
-      printf("Error with %d, skipping\n",orb.satno);
+      format_catalog_id(orb.satno,satstr,sizeof(satstr));
+      printf("Error with %s, skipping\n",satstr);
       continue;
-    } 
+    }
 
     if (orb.rev<10.0)
       continue;
-    
+
     // Loop over observations
     for (i=0,nalt=0,nsel=0;i<d.n;i++) {
       if (d.p[i].flag==2) {
-	alt=altitude(orb,d.p[i].mjd,d.p[i].s);
-	nsel++;
-	if (alt>altmin)
-	  nalt++;
+        alt=altitude(orb,d.p[i].mjd,d.p[i].s);
+        nsel++;
+
+        if (alt>altmin)
+          nalt++;
       }
     }
+
     frac=(float) nalt/(float) nsel;
+
     if (frac>0.95) {
+      format_catalog_id(orb.satno,satstr,sizeof(satstr));
+
       if (tle->name) {
-        printf("%5d - %s: %d/%d %.4f\n", orb.satno, tle->name, nalt, nsel, frac);
+        printf("%s - %s: %d/%d %.4f\n",
+               satstr,tle->name,nalt,nsel,frac);
       } else {
-        printf("%5d: %d/%d %.4f\n", orb.satno, nalt, nsel, frac);
+        printf("%s: %d/%d %.4f\n",
+               satstr,nalt,nsel,frac);
       }
     }
   }
 
   return satno;
 }
-
 void usage()
 {
-  printf("rffit -d <data file> -c [tle catalog] -i [satno] -h\n\ndata file:    Tabulated doppler curve\ntle catalog:  Catalog with TLE's (optional)\nsatno:        Satellite to load from TLE catalog (optional)\n\n");
+  printf("rffit -d <data file> -c [tle catalog] -i [catalog ID] -h\n"
+         "\n"
+         "data file:    Tabulated Doppler curve\n"
+         "tle catalog:  Catalog with TLEs (optional)\n"
+         "catalog ID:   Numeric or Alpha-5 identifier (optional)\n"
+         "\n");
 
   printf("rffit: fit RF observations\n\n");
   printf("-d <datafile>   Input data file with RF measurements\n");
-  printf("-c <catalog>    Catalog with TLE's [optional]\n");
-  printf("-i <satno>      NORAD ID of satellite to load\n");
+  printf("-c <catalog>    Catalog with TLEs [optional]\n");
+  printf("-i <catalog ID> Satellite to load, e.g. 25544 or A0000\n");
   printf("-s <site>       Site ID\n");
   printf("-g              GRAVES data\n");
   printf("-m <offset>     Frequency offset to apply [Hz]\n");
+  printf("-N              Use decimal catalog IDs instead of Alpha-5\n");
   printf("-F <freqlist>   List with frequencies [$ST_DATADIR/data/frequencies.txt]\n");
   printf("-h              This help\n");
-  
+
   return;
 }
 
@@ -319,7 +418,7 @@ int main(int argc,char *argv[])
   sprintf(freqlist,"%s/data/frequencies.txt",env);  
   
   // Decode options
-  while ((arg=getopt(argc,argv,"d:c:i:hs:gm:F:"))!=-1) {
+  while ((arg=getopt(argc,argv,"d:c:i:hs:gm:F:N"))!=-1) {
     switch(arg) {
     case 'd':
       datafile=optarg;
@@ -330,7 +429,10 @@ int main(int argc,char *argv[])
       break;
 
     case 'i':
-      satno=atoi(optarg);
+      if (!parse_catalog_id(optarg,&satno)) {
+        fprintf(stderr,"Invalid catalog ID: %s\n",optarg);
+        return 1;
+      }
       break;
 
     case 'F':
@@ -352,6 +454,10 @@ int main(int argc,char *argv[])
 
     case 'g':
       graves=1;
+      break;
+
+    case 'N':
+      numeric_ids=1;
       break;
 
     default:
@@ -408,18 +514,20 @@ int main(int argc,char *argv[])
     fatal_error("File open failed for reading %s\n",catalog);
   }
 
-  if (satno >= 0) {
-    tle_t * tle = get_tle_by_catalog_id(tle_array, satno);
+  if (satno>=0) {
+    tle_t *tle=get_tle_by_catalog_id(tle_array,satno);
 
-    if (tle == NULL) {
-      printf("No elements found for %5d\n", satno);
-      satno = -1;
+    if (tle==NULL) {
+      char satstr[16];
+
+      format_catalog_id(satno,satstr,sizeof(satstr));
+      printf("No elements found for %s\n",satstr);
+      satno=-1;
     } else {
-      orb = tle->orbit;
-      d.satname = tle->name;
+      orb=tle->orbit;
+      d.satname=tle->name;
     }
   }
-
   if (freopen("/tmp/stderr.txt","w",stderr)==NULL)
     fprintf(stderr,"Failed to redirect stderr\n");
 
@@ -485,13 +593,16 @@ int main(int argc,char *argv[])
 
       // Plot orbit
       if (satno>0 && plot_curve==1) {
-	// Initialize
-	imode=init_sgdp4(&orb);
-	if (imode==SGDP4_ERROR) {
-	  printf("Error with %d, skipping\n",orb.satno);
-	  break;
-	} 
-	
+        // Initialize
+        imode=init_sgdp4(&orb);
+
+        if (imode==SGDP4_ERROR) {
+          char satstr[16];
+
+          format_catalog_id(orb.satno,satstr,sizeof(satstr));
+          printf("Error with %s, skipping\n",satstr);
+          break;
+        }
 	cpgsci(15);
 	for (i=0;i<NMAX;i++) {
 	  mjd=xmin+d.mjd0+(xmax-xmin)*(float) i/(float) (NMAX-1);
@@ -626,11 +737,15 @@ int main(int argc,char *argv[])
 	cpgmtxt("T",1.0,0.0,0.0,line2);
 
 	// Initialize
-	imode=init_sgdp4(&orb);
-	if (imode==SGDP4_ERROR) {
-	  printf("Error with %d, skipping\n",orb.satno);
-	  break;
-	} 
+        imode=init_sgdp4(&orb);
+
+        if (imode==SGDP4_ERROR) {
+          char satstr[16];
+
+          format_catalog_id(orb.satno,satstr,sizeof(satstr));
+          printf("Error with %s, skipping\n",satstr);
+          break;
+        }
 	
 	// Loop over sites for plotting model
 	for (j=0;j<nsite;j++) {
@@ -748,38 +863,70 @@ int main(int argc,char *argv[])
       redraw=1;
     }
     
-    // Change
-    if (c=='c') {
-      printf("( 1) Inclination,     ( 2) Ascending Node,   ( 3) Eccentricity,\n( 4) Arg. of Perigee, ( 5) Mean Anomaly,     ( 6) Mean Motion,\n( 7) B* drag,         ( 8) Epoch,            ( 9) Satellite ID\n(10) Satellite name   (11) Satellite COSPAR  (12) Frequency (MHz)\n\nWhich parameter to change: ");
-      status=scanf("%i",&i);
-      if (i>=0 && i<=12) {
-	printf("\nNew value: ");
-	if (fgets(string,64,stdin)==NULL)
-	  fprintf(stderr,"Failed to read string\n");
-	status=scanf("%s",string);
-	if (i==1) orb.eqinc=RAD(atof(string));
-	if (i==2) orb.ascn=RAD(atof(string));
-	if (i==3) orb.ecc=atof(string);
-	if (i==4) orb.argp=RAD(atof(string));
-	if (i==5) orb.mnan=RAD(atof(string));
-	if (i==6) orb.rev=atof(string);
-	if (i==7) orb.bstar=atof(string);
-	if (i==8) 
-	  orb.ep_day=mjd2doy(nfd2mjd(string),&orb.ep_year);
-	if (i==9) orb.satno=atoi(string);
-	if (i==10) 
-	  d.satname=string;
-	if (i==11) 
-	  strcpy(orb.desig,string);
-	if (i==12) {
-	  d.ffit=atof(string) * 1000;
-	  d.fitfreq=0;
-	}
-	redraw=1;
-      }
-      printf("\n================================================================================\n");
-    }
+   // Change
+   if (c=='c') {
+     printf("( 1) Inclination,     ( 2) Ascending Node,   ( 3) Eccentricity,\n"
+            "( 4) Arg. of Perigee, ( 5) Mean Anomaly,     ( 6) Mean Motion,\n"
+            "( 7) B* drag,         ( 8) Epoch,            ( 9) Satellite ID\n"
+            "(10) Satellite name   (11) Satellite COSPAR  (12) Frequency (MHz)\n"
+            "\n"
+            "Which parameter to change: ");
 
+     status=scanf("%i",&i);
+
+     if (i>=0 && i<=12) {
+       printf("\nNew value: ");
+
+       if (fgets(string,64,stdin)==NULL)
+         fprintf(stderr,"Failed to read string\n");
+
+       status=scanf("%63s",string);
+
+       if (i==1)
+         orb.eqinc=RAD(atof(string));
+
+       if (i==2)
+         orb.ascn=RAD(atof(string));
+
+       if (i==3)
+         orb.ecc=atof(string);
+
+       if (i==4)
+         orb.argp=RAD(atof(string));
+
+       if (i==5)
+         orb.mnan=RAD(atof(string));
+
+       if (i==6)
+         orb.rev=atof(string);
+
+       if (i==7)
+         orb.bstar=atof(string);
+
+       if (i==8)
+         orb.ep_day=mjd2doy(nfd2mjd(string),&orb.ep_year);
+
+       if (i==9) {
+         if (!parse_catalog_id(string,&orb.satno))
+           printf("Invalid catalog ID: %s\n",string);
+       }
+
+       if (i==10)
+         d.satname=string;
+
+       if (i==11)
+         strcpy(orb.desig,string);
+
+       if (i==12) {
+         d.ffit=atof(string)*1000;
+         d.fitfreq=0;
+       }
+
+       redraw=1;
+     }
+
+     printf("\n================================================================================\n");
+   }
     // Move
     if (c=='m') {
       printf("Provide frequency offset (kHz): ");
@@ -798,31 +945,47 @@ int main(int argc,char *argv[])
       continue;
     }
 
-    // Flux limit
+    // Log frequency
     if (c=='l') {
+      char satstr[16];
+
+      format_catalog_id(orb.satno,satstr,sizeof(satstr));
+
       fp=fopen(freqlist,"a");
-      fprintf(fp,"%05d %lf\n",orb.satno,d.ffit/1000.0);
+      fprintf(fp,"%s %lf\n",satstr,d.ffit/1000.0);
       fclose(fp);
-      printf("Logged %05d at %lf to %s\n",orb.satno,d.ffit/1000.0,freqlist); 
+
+      printf("Logged %s at %lf to %s\n",
+             satstr,d.ffit/1000.0,freqlist);
+
       printf("\n================================================================================\n");
     }
 
-    // Fit
+    /// Fit
     if (c=='f') {
-      // Count points
-      for (i=0,nobs=0;i<d.n;i++)
-	if (d.p[i].flag==2)
-	  nobs++;
-      if (satno<0) {
-	printf("No elements loaded!\n");
-      } else if (nobs==0) {
-	printf("No points selected!\n");
-      } else {
-	rms=fit_curve(orb,ia);
-	printf("%05d %.6f %.3f %s %04d %02d%010.6f %d\n",orb.satno,d.ffit/1000.0,rms,nfdtca,site_id,orb.ep_year-2000,orb.ep_day,nobs);
-	redraw=1;
-      }
+     // Count points
+     for (i=0,nobs=0;i<d.n;i++) {
+       if (d.p[i].flag==2)
+         nobs++;
     }
+
+    if (satno<0) {
+      printf("No elements loaded!\n");
+    } else if (nobs==0) {
+      printf("No points selected!\n");
+    } else {
+      char satstr[16];
+
+      rms=fit_curve(orb,ia);
+      format_catalog_id(orb.satno,satstr,sizeof(satstr));
+
+      printf("%s %.6f %.6f %s %04d %02d%010.6f %d\n",
+             satstr,d.ffit/1000.0,rms,nfdtca,site_id,
+             orb.ep_year-2000,orb.ep_day,nobs);
+
+      redraw=1;
+    }
+   }
 
     // Set TLE epoch to current TCA
     if (c=='e') {
@@ -830,37 +993,45 @@ int main(int argc,char *argv[])
       redraw=1;
     }
 
-    // Get TLE
-    if (c=='g') {
-      printf("Get TLE from catalog, provide satellite number: ");
-      status=scanf("%d",&satno);
+   // Get TLE
+   if (c=='g') {
+     printf("Get TLE from catalog, provide catalog ID: ");
+     status=scanf("%63s",string);
 
-      // Free previous TLE
-      if (tle_array != NULL) {
-        free_tles(tle_array);
-      }
+     if (status!=1 || !parse_catalog_id(string,&satno)) {
+       printf("Invalid catalog ID: %s\n",string);
+       printf("\n================================================================================\n");
+       continue;
+     }
 
-      // Read TLE
-      tle_array = load_tles(catalog);
+     // Free previous TLE
+     if (tle_array!=NULL)
+       free_tles(tle_array);
 
-      if (tle_array->number_of_elements == 0) {
-        fatal_error("File open failed for reading %s\n",catalog);
-      }
+     // Read TLE
+     tle_array=load_tles(catalog);
 
-      tle_t * tle = get_tle_by_catalog_id(tle_array, satno);
+     if (tle_array->number_of_elements==0)
+       fatal_error("File open failed for reading %s\n",catalog);
 
-      if (tle == NULL) {
-        printf("No elements found for %5d\n", satno);
-        satno = -1;
-      } else {
-        orb = tle->orbit;
-        d.satname = tle->name;
-        print_orb(&orb);
-        d.ffit = d.f0;
-        redraw = 1;
-      }
-      printf("\n================================================================================\n");
-    }
+     tle_t *tle=get_tle_by_catalog_id(tle_array,satno);
+
+     if (tle==NULL) {
+       char satstr[16];
+
+       format_catalog_id(satno,satstr,sizeof(satstr));
+       printf("No elements found for %s\n",satstr);
+       satno=-1;
+     } else {
+       orb=tle->orbit;
+       d.satname=tle->name;
+       print_orb_mode(&orb,numeric_ids);
+       d.ffit=d.f0;
+       redraw=1;
+     }
+
+     printf("\n================================================================================\n");
+   }
 
     // Identify
     if (c=='i') {
@@ -922,13 +1093,16 @@ int main(int argc,char *argv[])
 
       tle_t * tle = get_tle_by_catalog_id(tle_array, satno);
 
-      if (tle == NULL) {
-        printf("No elements found for %5d\n", satno);
-        satno = -1;
+      if (tle==NULL) {
+        char satstr[16];
+
+        format_catalog_id(satno,satstr,sizeof(satstr));
+        printf("No elements found for %s\n",satstr);
+        satno=-1;
       } else {
         orb = tle->orbit;
         d.satname = tle->name;
-        print_orb(&orb);
+        print_orb_mode(&orb,numeric_ids);
         d.ffit = d.f0;
         redraw = 1;
       }
@@ -1064,24 +1238,32 @@ int main(int argc,char *argv[])
       redraw=1;
     }
 
-    // Save
-    if (c=='S') {
-      snprintf(default_filename,sizeof(default_filename), "%s_%.3f_%04d_%05d.dat",nfdtca,d.ffit/1000.0,d.p[0].site_id,satno);
-      printf("Save highlighted points, provide filename [%s]: ", default_filename);
+   // Save
+   if (c=='S') {
+     char satstr[16];
 
-      if (fgets(filename, sizeof(filename), stdin)) {
-        // Strip newline
-        filename[strcspn(filename, "\n")] = '\0';
+     if (satno>=0)
+       format_catalog_id(satno,satstr,sizeof(satstr));
+     else
+       snprintf(satstr,sizeof(satstr),"%05d",satno);
 
-        if (strlen(filename) == 0) {
-          strcpy(filename,default_filename);
-       }
+     snprintf(default_filename,sizeof(default_filename),"%s_%.3f_%04d_%s.dat",nfdtca,d.ffit/1000.0,d.p[0].site_id,satstr);
 
-        save_data(xmin,ymin,xmax,ymax,filename);
-        printf("\n================================================================================\n");
-      }
-    }
+     printf("Save highlighted points, provide filename [%s]: ",
+         default_filename);
 
+     if (fgets(filename,sizeof(filename),stdin)) {
+       // Strip newline
+       filename[strcspn(filename,"\n")]='\0';
+
+       if (strlen(filename)==0)
+         strcpy(filename,default_filename);
+
+       save_data(xmin,ymin,xmax,ymax,filename);
+
+       printf("\n================================================================================\n");
+     }
+   }
     // Unselect
     if (c=='U') {
       for (i=0;i<d.n;i++)
@@ -1144,7 +1326,7 @@ int main(int argc,char *argv[])
       elset++;
       if (elset>3)
 	elset=0;
-      print_orb(&orb);
+      print_orb_mode(&orb,numeric_ids);
       printf("\n================================================================================\n");
       click=0;
       redraw=1;
@@ -1163,7 +1345,7 @@ int main(int argc,char *argv[])
       orb.bstar=0.0;
       orb.ep_day=mjd2doy(0.5*(d.mjdmin+d.mjdmax),&orb.ep_year);
       satno=99999;
-      print_orb(&orb);
+      print_orb_mode(&orb,numeric_ids);
       printf("\n================================================================================\n");
       click=0;
       redraw=1;
@@ -1672,8 +1854,12 @@ double chisq(double a[])
 
   // Initialize
   imode=init_sgdp4(&orb);
-  if (imode==SGDP4_ERROR) 
-    printf("Error with %d\n",orb.satno);
+  if (imode==SGDP4_ERROR) {
+    char satstr[16];
+
+    format_catalog_id(orb.satno,satstr,sizeof(satstr));
+    printf("Error with %s\n",satstr);
+  }
 
   // Loop over highlighted points
   for (i=0,sum1=0.0,sum2=0.0;i<d.n;i++) {
@@ -1721,8 +1907,12 @@ double compute_rms(void)
 
   // Initialize
   imode=init_sgdp4(&orb);
-  if (imode==SGDP4_ERROR) 
-    printf("Error with %d\n",orb.satno);
+  if (imode==SGDP4_ERROR) {
+    char satstr[16];
+
+    format_catalog_id(orb.satno,satstr,sizeof(satstr));
+    printf("Error with %s\n",satstr);
+  }
 
   // Compute rms
   for (i=0,n=0,rms=0.0;i<d.n;i++) {

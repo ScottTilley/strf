@@ -5,6 +5,9 @@
 #include <ctype.h>
 #include <cpgplot.h>
 #include <getopt.h>
+
+#include "sgdp4h.h"
+#include "satutl.h"
 #include "rftime.h"
 #include "rfio.h"
 #include "rftrace.h"
@@ -26,18 +29,49 @@ void dec2sex(double x,char *s,int f,int len);
 void time_axis(double *mjd,int n,float xmin,float xmax,float ymin,float ymax);
 void bin_axis(int isub,int msub,float xmin,float xmax,float ymin,float ymax);
 void usage(void);
-void plot_traces(struct trace *t,int nsat,float fcen,float xmin,float xmax, int show_names);
+
+void format_catalog_id(int satno,int numeric_ids,char *out,size_t out_size);
+
+void plot_traces(struct trace *t,int nsat,float fcen,float xmin,float xmax,
+                 int show_names,int numeric_ids);
+
 struct trace fit_trace(struct spectrogram s,struct select sel,int site_id,int graves);
 struct trace fit_gaussian_trace(struct spectrogram s,struct select sel,int site_id,int graves);
 void convolve(float *y,int n,float *w,int m,float *z);
 float gauss(float x,float w);
 void quadfit(float x[],float y[],int n,float a[]);
-struct trace locate_trace(struct spectrogram s,struct trace t,int site_id,float sigmamin,float wmin,float wmax,int graves);
+
+struct trace locate_trace(struct spectrogram s,struct trace t,int site_id,
+                          float sigmamin,float wmin,float wmax,int graves,
+                          int numeric_ids);
+
 void filter(struct spectrogram s,int site_id,float sigma,int graves);
-void peakfind(struct spectrogram s,int site_id,int i0,int i1,int j0,int j1);
-void versafit(int m,int n,double *a,double *da,double (*func)(double *),double dchisq,double tol,char *opt);
+
+void peakfind(struct spectrogram s,int site_id,
+              int i0,int i1,int j0,int j1);
+
+void versafit(int m,int n,double *a,double *da,
+              double (*func)(double *),
+              double dchisq,double tol,char *opt);
+
 double chisq_gaussian(double a[]);
-float fit_gaussian_point(struct spectrogram s,float x,float y,struct select sel,int site_id,int graves);
+
+float fit_gaussian_point(struct spectrogram s,float x,float y,
+                         struct select sel,int site_id,int graves);
+
+// Format a catalog identifier for user-facing output.
+// Alpha-5 is the default; numeric mode is available with -N.
+void format_catalog_id(int satno,int numeric_ids,char *out,size_t out_size)
+{
+  char alpha5[6];
+
+  if (numeric_ids) {
+    snprintf(out,out_size,"%05d",satno);
+  } else {
+    number_to_alpha5(satno,alpha5);
+    snprintf(out,out_size,"%s",alpha5);
+  }
+}
 
 int main(int argc,char *argv[])
 {
@@ -66,6 +100,7 @@ int main(int argc,char *argv[])
   char c;
   char path[128],xlabel[128],ylabel[64],filename[32],tlefile[128],freqlist[128];
   char nfd[32];
+  char satstr[16];
   int sec,lsec,ssec;
   char stime[16];
   double fmin,fmax,fcen,f;
@@ -82,9 +117,12 @@ int main(int argc,char *argv[])
   double foff=0.0,mjdgrid=0.0;
   int jj0,jj1;
   int show_names = 0;
+  int numeric_ids = 0;
   char * start_time = NULL;
   char * end_time = NULL;
+  char satid[6];
 
+  
   // Get site
   env=getenv("ST_COSPAR");
   if (env!=NULL) {
@@ -108,7 +146,7 @@ int main(int argc,char *argv[])
   
   // Read arguments
   if (argc>1) {
-    while ((arg=getopt(argc,argv,"p:f:w:s:l:b:z:hc:C:gm:o:S:W:F:nT:E:"))!=-1) {
+    while ((arg=getopt(argc,argv,"p:f:w:s:l:b:z:hc:C:gm:o:S:W:F:nNT:E:"))!=-1) {
       switch (arg) {
 	
       case 'p':
@@ -181,6 +219,10 @@ int main(int argc,char *argv[])
       case 'n':
         show_names = 1;
         break;
+
+      case 'N':
+        numeric_ids=1;
+        break; 
 
         case 'T':
           start_time = optarg;
@@ -306,7 +348,7 @@ int main(int argc,char *argv[])
       fcen=0.5*(fmax+fmin);
       cpgswin(xmin,xmax,fmin-fcen,fmax-fcen);
       if (foverlay==1)
-	plot_traces(t,nsat,fcen,xmin,xmax, show_names);
+	plot_traces(t,nsat,fcen,xmin,xmax,show_names,numeric_ids);
 
       fcen=floor(1000*fcen)/1000.0;
       sprintf(ylabel,"Frequency - %.3f MHz",fcen);
@@ -412,6 +454,7 @@ int main(int argc,char *argv[])
       printf("p/right  Toggle overlays\n");
       printf("a        Toggle subint/bin file horizontal axis\n");
       printf("n        Toggle display of satellite names in overlay\n");
+      printf("N        Use numeric catalog IDs instead of Alpha-5\n");
       printf("+        Zoom\n");
       printf("-/x      Unzoom\n");
       printf("R        Recompute traces\n");
@@ -449,17 +492,23 @@ int main(int argc,char *argv[])
       mjdgrid=s.mjd[(int) floor(x)];
       redraw=1;
     }
+ 
 
-    // Track
-    if (c=='t') {
-      for (i=0;i<nsat;i++) {
-	printf("Locating trace for object %05d\n",t[i].satno);
-	if (graves==0)
-	  locate_trace(s,t[i],site_id,sel.sigma,sel.w,sel.w,graves);
-	else
-	  locate_trace(s,t[i],site_id,sel.sigma,10.0,sel.w,graves);
-      }
-    }
+   // Locate traces
+   if (c=='t') {
+     for (i=0;i<nsat;i++) {
+       format_catalog_id(t[i].satno,numeric_ids,satstr,sizeof(satstr));
+       printf("Locating trace for object %s\n",satstr);
+
+       if (graves==0)
+         locate_trace(s,t[i],site_id,sel.sigma,sel.w,sel.w,graves,
+                   numeric_ids);
+       else
+         locate_trace(s,t[i],site_id,sel.sigma,10.0,sel.w,graves,
+                   numeric_ids);
+     }
+   }
+
 
     // Select start
     if (c=='s') {
@@ -530,9 +579,13 @@ int main(int argc,char *argv[])
     
     // Identify
     if (c=='I') {
-      printf("Provide satno: ");
-      status=scanf("%d",&satno);
-      identify_trace(tlefile,tf,satno,freqlist);
+      printf("Provide catalog ID: ");
+      status=scanf("%5s",satid);
+
+      if (status==1) {
+        satno=alpha5_to_number(satid);
+        identify_trace(tlefile,tf,satno,freqlist);
+      }
       redraw=1;
       continue;
     }
@@ -1075,55 +1128,53 @@ void usage(void)
 }
 
 
-void plot_traces(struct trace *t,int nsat,float fcen,float xmin,float xmax, int show_names)
+void plot_traces(struct trace *t,int nsat,float fcen,float xmin,float xmax,
+                 int show_names,int numeric_ids)
 {
   int i,j,flag,textflag;
-  char text[34]; // 34: 6 digits + " - " + max 24 name + "\0"
+  char satstr[16];
+  char text[64];
 
   // Loop over objects
   for (i=0;i<nsat;i++) {
-    // Select color
+    // Set colour
     if (t[i].classfd==1)
-      cpgsci(8);
+      cpgsci(2);
     else
       cpgsci(3);
 
-    if (show_names && (t[i].satname[0] != '\0')) {
-      sprintf(text,"%d - %s", t[i].satno, t[i].satname);
-    } else {
-      sprintf(text,"%d", t[i].satno);
-    }
+    format_catalog_id(t[i].satno,numeric_ids,satstr,sizeof(satstr));
 
-    // Plot label at start of trace
-    if (t[i].za[0]<=90.0)
-	cpgtext(0.0,(float) t[i].freq[0]-fcen,text);
+    // Set label
+    if (show_names==0)
+      snprintf(text,sizeof(text),"%s",satstr);
+    else
+      snprintf(text,sizeof(text),"%s - %.48s",satstr,t[i].satname);
 
-    // Loop over trace
+    // Preserve the original trace-drawing behaviour.
     for (j=0,flag=0,textflag=0;j<t[i].n;j++) {
-      if ((float) j < xmin)
-	continue;
-      if ((float) j > xmax)
-	continue;
-      
-      // Plot label for rising sources
-      if (j>0 && t[i].za[j-1]>90.0 && t[i].za[j]<=90.0)
-	cpgtext((float) j,(float) t[i].freq[j]-fcen,text);
+      if ((float) j<xmin || (float) j>xmax)
+        continue;
 
-      // Plot line
+      // Plot label when the object rises above the horizon.
+      if (j>0 && t[i].za[j-1]>90.0 && t[i].za[j]<=90.0)
+        cpgtext((float) j,(float) t[i].freq[j]-fcen,text);
+
+      // Plot trace
       if (flag==0) {
-	cpgmove((float) j,t[i].freq[j]-fcen);
-	flag=1;
+        cpgmove((float) j,t[i].freq[j]-fcen);
+        flag=1;
       } else {
-	cpgdraw((float) j,t[i].freq[j]-fcen);
+        cpgdraw((float) j,t[i].freq[j]-fcen);
       }
 
-      // Below horizon
       if (t[i].za[j]>90.0)
-	flag=0;
+        flag=0;
       else
-	flag=1;
-    }	  
+        flag=1;
+    }
   }
+
   cpgsci(1);
 
   return;
@@ -1360,7 +1411,9 @@ void quadfit(float x[],float y[],int n,float a[])
 }
 
 // Fit trace
-struct trace locate_trace(struct spectrogram s,struct trace t,int site_id,float sigmamin,float wmin,float wmax,int graves)
+struct trace locate_trace(struct spectrogram s,struct trace t,int site_id,
+                          float sigmamin,float wmin,float wmax,int graves,
+                          int numeric_ids)
 {
   int i,j,k,l,sn;
   int i0,i1,j0,j1,jmax;
@@ -1368,6 +1421,7 @@ struct trace locate_trace(struct spectrogram s,struct trace t,int site_id,float 
   float x,y,s1,s2,z,za,zs,zm,sigma;
   FILE *file;
   char filename[64];
+  char satstr[16];
   int file_open=0;
   
 
@@ -1415,7 +1469,8 @@ struct trace locate_trace(struct spectrogram s,struct trace t,int site_id,float 
       // Open file
       if (file_open==0) {
 	// Open file
-	sprintf(filename,"track_%05d_%08.3f.dat",t.satno,t.freq0);
+	format_catalog_id(t.satno,numeric_ids,satstr,sizeof(satstr));
+        snprintf(filename,sizeof(filename),"track_%s_%.3f.dat",satstr,t.freq0);
 	file=fopen(filename,"a");
 	file_open=1;
       }

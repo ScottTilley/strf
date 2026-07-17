@@ -17,6 +17,7 @@ void conditional_copy_satname(char * satname, char * current_line);
 int  read_twoline(FILE *fp, long satno, orbit_t *orb, char *satname);
 void *vector(size_t num, size_t size);
 void print_orb(orbit_t *orb);
+void print_orb_mode(orbit_t *orb,int numeric_ids);
 int alpha5_to_number(const char *s);
 void number_to_alpha5(int number, char *result);
 void zero_pad(const char *s, char *result);

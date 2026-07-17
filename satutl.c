@@ -343,21 +343,45 @@ return ptr;
    Print out orbital parameters.
    ================================================================== */
 
+// Print orbital parameters with selectable catalog-ID formatting.
+void print_orb_mode(orbit_t *orb,int numeric_ids)
+{
+  char satstr[16];
+
+  if (numeric_ids) {
+    snprintf(satstr,sizeof(satstr),"%05d",orb->satno);
+  } else {
+    number_to_alpha5(orb->satno,satstr);
+  }
+
+  printf("# Satellite ID = %s\n",satstr);
+  printf("# Satellite designation = %s\n",orb->desig);
+  printf("# Epoch year = %d day = %.8f\n",
+         orb->ep_year,orb->ep_day);
+  printf("# Eccentricity = %.7f\n",orb->ecc);
+  printf("# Equatorial inclination = %.4f deg\n",
+         DEG(orb->eqinc));
+  printf("# Argument of perigee = %.4f deg\n",
+         DEG(orb->argp));
+  printf("# Mean anomaly = %.4f deg\n",
+         DEG(orb->mnan));
+  printf("# Right Ascension of Ascending Node = %.4f deg\n",
+         DEG(orb->ascn));
+  printf("# Mean Motion (number of rev/day) = %.8f\n",
+         orb->rev);
+  printf("# First derivative of mean motion = %e\n",
+         orb->ndot2);
+  printf("# Second derivative of mean motion = %e\n",
+         orb->nddot6);
+  printf("# BSTAR drag = %.4e\n",orb->bstar);
+  printf("# Orbit number = %ld\n",orb->norb);
+}
+
+
+// Default orbital display uses Alpha-5 catalog IDs.
 void print_orb(orbit_t *orb)
 {
-  printf("# Satellite ID = %ld\n", (long)orb->satno);
-  printf("# Satellite designation = %s\n",orb->desig);
-  printf("# Epoch year = %d day = %.8f\n", orb->ep_year, orb->ep_day);
-  printf("# Eccentricity = %.7f\n", orb->ecc);
-  printf("# Equatorial inclination = %.4f deg\n", DEG(orb->eqinc));
-  printf("# Argument of perigee = %.4f deg\n", DEG(orb->argp));
-  printf("# Mean anomaly = %.4f deg\n", DEG(orb->mnan));
-  printf("# Right Ascension of Ascending Node = %.4f deg\n", DEG(orb->ascn));
-  printf("# Mean Motion (number of rev/day) = %.8f\n", orb->rev);
-  printf("# First derivative of mean motion = %e\n",orb->ndot2);
-  printf("# Second derivative of mean motion = %e\n",orb->nddot6);
-  printf("# BSTAR drag = %.4e\n", orb->bstar);
-  printf("# Orbit number = %ld\n", orb->norb);
+  print_orb_mode(orb,0);
 }
 
 /* ====================================================================== */
